@@ -1,0 +1,18 @@
+# Production override adding Nginx reverse proxy for public HTTP/HTTPS
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/smartfactory.conf:/etc/nginx/conf.d/default.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/www/certbot:/var/www/certbot:ro
+    networks:
+      - smartfactory_net

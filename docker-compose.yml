@@ -1,39 +1,59 @@
 services:
-  mysql:
-    image: mysql:8.4
+  db:
+    image: mysql:8.0
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: root_change_me
-      MYSQL_DATABASE: smartfactory_erp
-    ports:
-      - "3306:3306"
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+      MYSQL_DATABASE: ${DB_NAME:-smartfactory_erp}
+      MYSQL_USER: ${DB_USER:-smartfactory_app}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
     volumes:
       - mysql_data:/var/lib/mysql
-      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./database/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - smartfactory_net
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-proot_change_me"]
-      interval: 5s
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
       timeout: 5s
       retries: 20
+      start_period: 20s
+
   app:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     restart: unless-stopped
     depends_on:
-      mysql:
+      db:
         condition: service_healthy
+    env_file:
+      - .env
     environment:
-      PORT: 3000
-      DB_HOST: mysql
+      PORT: ${PORT:-3000}
+      HOST: 0.0.0.0
+      NODE_ENV: ${NODE_ENV:-production}
+      DB_HOST: db
       DB_PORT: 3306
-      DB_USER: root
-      DB_PASSWORD: root_change_me
-      DB_NAME: smartfactory_erp
-      JWT_SECRET: replace_with_a_long_random_secret
-      FACTORY_NAME: SmartFactory Foods
-      FACTORY_GSTIN: 33AAAAA0000A1Z5
-      FACTORY_STATE_CODE: 33
-      FACTORY_ADDRESS: Tamil Nadu, India
+      DB_NAME: ${DB_NAME:-smartfactory_erp}
+      DB_USER: ${DB_USER:-smartfactory_app}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
     ports:
-      - "3000:3000"
+      - "127.0.0.1:${PORT:-3000}:3000"
+    networks:
+      - smartfactory_net
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+networks:
+  smartfactory_net:
+    driver: bridge
+
 volumes:
   mysql_data:
+    driver: local

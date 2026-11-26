@@ -1,0 +1,365 @@
+-- Non-destructive Docker initialization schema (safe: never drops existing tables)
+CREATE DATABASE IF NOT EXISTS smartfactory_erp CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE smartfactory_erp;
+
+CREATE TABLE IF NOT EXISTS users (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(120) NOT NULL,
+  email VARCHAR(190) NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NOT NULL,
+  role ENUM('OWNER','ADMIN','SALESMAN','PRODUCTION','ACCOUNTANT') NOT NULL,
+  sales_target DECIMAL(14,2) NOT NULL DEFAULT 50000.00,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS customers (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(160) NOT NULL,
+  customer_type ENUM('RETAILER','DISTRIBUTOR') NOT NULL,
+  gstin VARCHAR(15),
+  state_code CHAR(2) NOT NULL,
+  address TEXT,
+  phone VARCHAR(20),
+  email VARCHAR(190),
+  credit_limit DECIMAL(14,2) NOT NULL DEFAULT 100000.00,
+  is_active BOOLEAN DEFAULT TRUE,
+  INDEX idx_customers_type_active(customer_type, is_active)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS suppliers (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(160) NOT NULL,
+  gstin VARCHAR(15),
+  state_code CHAR(2),
+  phone VARCHAR(20),
+  address TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS products (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  sku VARCHAR(60) UNIQUE NOT NULL,
+  name VARCHAR(160) NOT NULL,
+  pack_size VARCHAR(40) NOT NULL,
+  expected_yield DECIMAL(14,3) NOT NULL,
+  selling_price DECIMAL(14,2) NOT NULL,
+  hsn_code VARCHAR(20) NOT NULL,
+  gst_rate DECIMAL(5,2) NOT NULL DEFAULT 5,
+  image_url VARCHAR(500),
+  is_active BOOLEAN DEFAULT TRUE,
+  INDEX idx_products_active(is_active)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS inventory_items (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  sku VARCHAR(60) UNIQUE,
+  name VARCHAR(160) NOT NULL,
+  item_type ENUM('RAW','PACKAGING','FINISHED') NOT NULL,
+  base_unit ENUM('kg','g','litre','ml','piece','packet','carton') NOT NULL,
+  reorder_level DECIMAL(14,3) DEFAULT 0,
+  is_active BOOLEAN DEFAULT TRUE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS boms (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  product_id BIGINT NOT NULL,
+  version_no INT NOT NULL DEFAULT 1,
+  effective_date DATE NULL,
+  notes VARCHAR(255) NULL,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_bom_product_version(product_id, version_no),
+  FOREIGN KEY (product_id) REFERENCES products(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS bom_items (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  bom_id BIGINT NOT NULL,
+  item_id BIGINT NOT NULL,
+  item_type ENUM('RAW','PACKAGING') NOT NULL,
+  quantity_per_batch DECIMAL(14,4) NOT NULL,
+  unit VARCHAR(20) NOT NULL,
+  UNIQUE KEY uq_bom_item(bom_id, item_id),
+  FOREIGN KEY (bom_id) REFERENCES boms(id),
+  FOREIGN KEY (item_id) REFERENCES inventory_items(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS purchases (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  supplier_id BIGINT NOT NULL,
+  invoice_number VARCHAR(80),
+  purchase_date DATE NOT NULL,
+  total_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+  status ENUM('POSTED','CANCELLED') DEFAULT 'POSTED',
+  created_by BIGINT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
+  FOREIGN KEY (created_by) REFERENCES users(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS purchase_items (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  purchase_id BIGINT NOT NULL,
+  item_id BIGINT NOT NULL,
+  quantity DECIMAL(16,4) NOT NULL,
+  unit VARCHAR(20) NOT NULL,
+  rate DECIMAL(14,4) NOT NULL,
+  FOREIGN KEY (purchase_id) REFERENCES purchases(id),
+  FOREIGN KEY (item_id) REFERENCES inventory_items(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS purchase_returns (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  purchase_id BIGINT NOT NULL,
+  item_id BIGINT NOT NULL,
+  quantity DECIMAL(16,4) NOT NULL,
+  unit VARCHAR(20) NOT NULL,
+  reason VARCHAR(500),
+  created_by BIGINT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (purchase_id) REFERENCES purchases(id),
+  FOREIGN KEY (item_id) REFERENCES inventory_items(id),
+  FOREIGN KEY (created_by) REFERENCES users(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS supplier_payments (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  supplier_id BIGINT NOT NULL,
+  purchase_id BIGINT NULL,
+  amount DECIMAL(14,2) NOT NULL,
+  payment_date DATE NOT NULL,
+  mode VARCHAR(30),
+  reference_no VARCHAR(100),
+  notes VARCHAR(500),
+  created_by BIGINT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (supplier_id) REFERENCES suppliers(id),
+  FOREIGN KEY (purchase_id) REFERENCES purchases(id),
+  FOREIGN KEY (created_by) REFERENCES users(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS production_runs (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  product_id BIGINT NOT NULL,
+  batch_number VARCHAR(60) NULL,
+  production_date DATE NULL,
+  batch_count DECIMAL(12,3) NOT NULL,
+  expected_output DECIMAL(14,3) NOT NULL,
+  actual_output DECIMAL(14,3) NOT NULL,
+  actual_wastage DECIMAL(14,3) NOT NULL DEFAULT 0,
+  damaged_pouches INT NOT NULL DEFAULT 0,
+  labour_cost DECIMAL(14,2) NOT NULL DEFAULT 0,
+  utility_cost DECIMAL(14,2) NOT NULL DEFAULT 0,
+  material_cost DECIMAL(14,2) NOT NULL DEFAULT 0,
+  total_cost DECIMAL(14,2) NOT NULL DEFAULT 0,
+  cost_per_packet DECIMAL(14,4) NOT NULL DEFAULT 0,
+  status ENUM('DRAFT','POSTED','CANCELLED') NOT NULL,
+  created_by BIGINT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (product_id) REFERENCES products(id),
+  FOREIGN KEY (created_by) REFERENCES users(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS production_consumption (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  run_id BIGINT NOT NULL,
+  item_id BIGINT NOT NULL,
+  planned_quantity DECIMAL(16,4) NOT NULL,
+  actual_quantity DECIMAL(16,4) NOT NULL,
+  unit VARCHAR(20) NOT NULL,
+  variance_percent DECIMAL(9,3) NOT NULL,
+  unit_cost DECIMAL(14,4) DEFAULT 0,
+  line_cost DECIMAL(14,2) DEFAULT 0,
+  FOREIGN KEY (run_id) REFERENCES production_runs(id),
+  FOREIGN KEY (item_id) REFERENCES inventory_items(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS quality_inspections (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  run_id BIGINT NOT NULL,
+  inspector_id BIGINT NOT NULL,
+  inspection_date DATE NOT NULL,
+  status ENUM('PASSED','FAILED','CONDITIONAL') NOT NULL DEFAULT 'PASSED',
+  rejected_qty INT NOT NULL DEFAULT 0,
+  defect_type VARCHAR(120) NULL,
+  checklist JSON NULL,
+  corrective_action TEXT NULL,
+  notes VARCHAR(500) NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (run_id) REFERENCES production_runs(id),
+  FOREIGN KEY (inspector_id) REFERENCES users(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS stock_ledger (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  item_type ENUM('RAW','PACKAGING','FINISHED') NOT NULL,
+  item_id BIGINT NOT NULL,
+  movement_type ENUM('OPENING','RECEIPT','ISSUE','SALE','PRODUCTION_IN','RETURN_IN','ADJUSTMENT_IN','ADJUSTMENT_OUT') NOT NULL,
+  quantity DECIMAL(16,4) NOT NULL,
+  unit VARCHAR(20) NOT NULL,
+  unit_cost DECIMAL(14,4) DEFAULT 0,
+  source_type VARCHAR(40) NOT NULL,
+  source_id BIGINT NOT NULL,
+  notes VARCHAR(500),
+  created_by BIGINT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_stock_item(item_type, item_id, created_at),
+  FOREIGN KEY (created_by) REFERENCES users(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS stock_batches (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  item_type ENUM('RAW','PACKAGING','FINISHED') NOT NULL,
+  item_id BIGINT NOT NULL,
+  batch_no VARCHAR(60) NOT NULL,
+  expiry_date DATE NULL,
+  initial_qty DECIMAL(16,4) NOT NULL,
+  remaining_qty DECIMAL(16,4) NOT NULL,
+  unit VARCHAR(20) NOT NULL,
+  unit_cost DECIMAL(14,4) DEFAULT 0,
+  source_type VARCHAR(40) NOT NULL,
+  source_id BIGINT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_fefo(item_type, item_id, expiry_date, remaining_qty)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS stock_adjustments (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  item_type ENUM('RAW','PACKAGING','FINISHED') NOT NULL,
+  item_id BIGINT NOT NULL,
+  direction ENUM('IN','OUT') NOT NULL,
+  quantity DECIMAL(16,4) NOT NULL,
+  unit VARCHAR(20) NOT NULL,
+  reason VARCHAR(500),
+  status ENUM('PENDING','APPROVED','REJECTED') NOT NULL DEFAULT 'PENDING',
+  approved_by BIGINT NULL,
+  approved_at DATETIME NULL,
+  created_by BIGINT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (created_by) REFERENCES users(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS sales_orders (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  customer_id BIGINT NOT NULL,
+  salesman_id BIGINT NOT NULL,
+  idempotency_key VARCHAR(64) NULL UNIQUE,
+  status ENUM('SUBMITTED','APPROVED','INVOICED','DISPATCHED','REJECTED') NOT NULL,
+  total_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+  approved_by BIGINT NULL,
+  approved_at DATETIME NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (customer_id) REFERENCES customers(id),
+  FOREIGN KEY (salesman_id) REFERENCES users(id),
+  FOREIGN KEY (approved_by) REFERENCES users(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS sales_order_items (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  order_id BIGINT NOT NULL,
+  product_id BIGINT NOT NULL,
+  quantity INT NOT NULL,
+  unit_price DECIMAL(14,2) NOT NULL,
+  FOREIGN KEY (order_id) REFERENCES sales_orders(id),
+  FOREIGN KEY (product_id) REFERENCES products(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS invoice_sequences (
+  financial_year VARCHAR(9) PRIMARY KEY,
+  last_number INT NOT NULL DEFAULT 0
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS invoices (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  order_id BIGINT NOT NULL UNIQUE,
+  invoice_number VARCHAR(40) NOT NULL UNIQUE,
+  financial_year VARCHAR(9) NOT NULL,
+  taxable_value DECIMAL(14,2) NOT NULL,
+  cgst DECIMAL(14,2) NOT NULL DEFAULT 0,
+  sgst DECIMAL(14,2) NOT NULL DEFAULT 0,
+  igst DECIMAL(14,2) NOT NULL DEFAULT 0,
+  total_amount DECIMAL(14,2) NOT NULL,
+  irn VARCHAR(64) NULL,
+  ack_no VARCHAR(40) NULL,
+  ack_date DATETIME NULL,
+  ewb_no VARCHAR(30) NULL,
+  einvoice_json JSON NULL,
+  status ENUM('POSTED','CANCELLED') DEFAULT 'POSTED',
+  created_by BIGINT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (order_id) REFERENCES sales_orders(id),
+  FOREIGN KEY (created_by) REFERENCES users(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS sales_visits (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  salesman_id BIGINT NOT NULL,
+  customer_id BIGINT NOT NULL,
+  latitude DECIMAL(10,7) NOT NULL,
+  longitude DECIMAL(10,7) NOT NULL,
+  accuracy_m DECIMAL(8,2) NULL,
+  notes VARCHAR(300) NULL,
+  visited_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (salesman_id) REFERENCES users(id),
+  FOREIGN KEY (customer_id) REFERENCES customers(id),
+  INDEX idx_visits_salesman(salesman_id, visited_at)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS dispatches (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  order_id BIGINT NOT NULL,
+  dispatch_date DATE NOT NULL,
+  reference_no VARCHAR(80),
+  created_by BIGINT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (order_id) REFERENCES sales_orders(id),
+  FOREIGN KEY (created_by) REFERENCES users(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS dispatch_items (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  dispatch_id BIGINT NOT NULL,
+  product_id BIGINT NOT NULL,
+  quantity INT NOT NULL,
+  FOREIGN KEY (dispatch_id) REFERENCES dispatches(id),
+  FOREIGN KEY (product_id) REFERENCES products(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS credit_notes (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  invoice_id BIGINT NOT NULL UNIQUE,
+  credit_note_number VARCHAR(50) NOT NULL UNIQUE,
+  amount DECIMAL(14,2) NOT NULL,
+  reason VARCHAR(500),
+  created_by BIGINT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (invoice_id) REFERENCES invoices(id),
+  FOREIGN KEY (created_by) REFERENCES users(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS payments (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  invoice_id BIGINT NOT NULL,
+  amount DECIMAL(14,2) NOT NULL,
+  payment_date DATE NOT NULL,
+  mode VARCHAR(30),
+  reference_no VARCHAR(100),
+  created_by BIGINT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (invoice_id) REFERENCES invoices(id),
+  FOREIGN KEY (created_by) REFERENCES users(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id BIGINT NULL,
+  action VARCHAR(80) NOT NULL,
+  entity_type VARCHAR(60) NOT NULL,
+  entity_id BIGINT NOT NULL,
+  before_data JSON NULL,
+  after_data JSON NULL,
+  ip_address VARCHAR(45),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+) ENGINE=InnoDB;

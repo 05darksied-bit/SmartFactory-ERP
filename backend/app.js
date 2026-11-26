@@ -5,8 +5,10 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
+const db = require('./config/db');
 
 const app = express();
+app.set('trust proxy', 1);
 app.use(helmet({ contentSecurityPolicy: false }));
 if (process.env.CORS_ORIGIN) {
   app.use(cors({ origin: process.env.CORS_ORIGIN.split(',').map(x => x.trim()) }));
@@ -43,7 +45,15 @@ app.use('/api/qc', require('./routes/qc'));
 app.use('/api/visits', require('./routes/visits'));
 
 app.use(express.static(path.join(__dirname, '../frontend')));
-app.get('/api/health', (_req, res) => res.json({ status: 'ok', service: 'SmartFactory ERP' }));
+
+app.get('/api/health', async (_req, res) => {
+  try {
+    await db.query('SELECT 1');
+    res.json({ status: 'ok', service: 'SmartFactory ERP', db: 'connected' });
+  } catch {
+    res.status(503).json({ status: 'degraded', service: 'SmartFactory ERP', db: 'disconnected' });
+  }
+});
 
 app.use((err, _req, res, _next) => {
   console.error(err);
@@ -54,8 +64,29 @@ app.use((err, _req, res, _next) => {
 });
 
 const port = Number(process.env.PORT || 3000);
+const host = process.env.HOST || '0.0.0.0';
+
 if (require.main === module) {
-  app.listen(port, () => console.log(`SmartFactory ERP: http://localhost:${port}`));
+  const server = app.listen(port, host, () => {
+    console.log(`SmartFactory ERP listening on http://${host}:${port}`);
+  });
+
+  const shutdown = signal => {
+    console.log(`[SERVER] ${signal} received; shutting down gracefully...`);
+    server.close(async () => {
+      try {
+        await db.end();
+        console.log('[DB] Pool closed.');
+      } catch (e) {
+        console.error('[DB] Error closing pool:', e.message);
+      }
+      process.exit(0);
+    });
+    setTimeout(() => process.exit(1), 10000).unref();
+  };
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
 module.exports = app;

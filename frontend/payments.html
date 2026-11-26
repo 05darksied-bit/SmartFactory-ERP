@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Collections | SmartFactory ERP</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="/css/app.css" rel="stylesheet">
+</head>
+<body>
+<div class="app-shell">
+<aside class="sidebar"></aside>
+<main class="main-content">
+<header class="topbar">
+  <div><div class="eyebrow">ACCOUNTS RECEIVABLE</div><h1 class="h3 mb-0">Record collection</h1></div>
+</header>
+<div class="p-4">
+  <div class="panel-card p-4 mb-3">
+    <form id="paymentForm" class="row g-3">
+      <div class="col-md-4"><label class="form-label">Invoice</label><select id="invoiceId" class="form-select" required></select></div>
+      <div class="col-md-2"><label class="form-label">Amount (₹)</label><input id="paymentAmount" type="number" min="0.01" step="0.01" class="form-control" required></div>
+      <div class="col-md-2"><label class="form-label">Date</label><input id="paymentDate" type="date" class="form-control" required></div>
+      <div class="col-md-2"><label class="form-label">Mode</label><select id="paymentMode" class="form-select"><option>UPI</option><option>Bank transfer</option><option>Cash</option><option>Cheque</option></select></div>
+      <div class="col-md-2 d-flex align-items-end"><button class="btn btn-primary w-100" type="submit">Record payment</button></div>
+    </form>
+    <div id="paymentMessage" class="small mt-3"></div>
+  </div>
+  <div class="panel-card p-3">
+    <h2 class="h5 mb-3">Payment history</h2>
+    <div id="paymentHistory" class="table-responsive"></div>
+  </div>
+</div>
+</main>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/js/app.js"></script>
+<script src="/js/payments.js"></script>
+</body>
+</html>

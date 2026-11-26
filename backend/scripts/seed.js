@@ -3,8 +3,17 @@ const bcrypt=require('bcryptjs');
 const db=require('../config/db');
 
 async function main(){
+ const ifEmpty=process.argv.includes('--if-empty')||process.env.SEED_IF_EMPTY==='true';
  const c=await db.getConnection();
  try{
+  if(ifEmpty){
+   const [[u]]=await c.query('SELECT COUNT(*) AS cnt FROM users');
+   const [[p]]=await c.query("SELECT COUNT(*) AS cnt FROM products WHERE sku='MUR-200'");
+   if(Number(u.cnt)>0&&Number(p.cnt)>0){
+    console.log('[SEED] Database already initialized with benchmark master data; skipping seed.');
+    return;
+   }
+  }
   await c.query('SET FOREIGN_KEY_CHECKS=0');
   const resetTables=['sales_visits','quality_inspections','supplier_payments','purchase_returns','stock_batches','audit_logs','credit_notes','payments','dispatch_items','dispatches','invoices','invoice_sequences','sales_order_items','sales_orders','production_consumption','production_runs','stock_ledger','purchase_items','purchases','bom_items','boms','customers','suppliers','inventory_items','products'];
   for(const t of resetTables) await c.query(`TRUNCATE TABLE ${t}`);

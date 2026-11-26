@@ -1,0 +1,3 @@
+const FACTORS={kg:{dimension:'mass',base:1000},g:{dimension:'mass',base:1},litre:{dimension:'volume',base:1000},ml:{dimension:'volume',base:1},piece:{dimension:'count',base:1},packet:{dimension:'count',base:1},carton:{dimension:'carton',base:1}};
+function convert(value,from,to,piecesPerCarton=20){const n=Number(value);if(!Number.isFinite(n)||n<0)throw new Error('Quantity must be a non-negative number');if(from===to)return n;if(from==='carton'&&to==='packet')return n*piecesPerCarton;if(from==='packet'&&to==='carton')return n/piecesPerCarton;const a=FACTORS[from],b=FACTORS[to];if(!a||!b||a.dimension!==b.dimension)throw new Error(`Unsupported unit conversion: ${from} to ${to}`);return n*a.base/b.base}
+module.exports={convert};
